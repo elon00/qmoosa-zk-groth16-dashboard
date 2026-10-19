@@ -1,28 +1,62 @@
-name: Groth16 Zero-Knowledge Dashboard CI Gate
-
+name: Groth16 dashboard real verification
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-
+    branches: [main]
+permissions:
+  contents: read
 jobs:
-  test:
+  acceptance:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout dashboard repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run Dashboard Static Invariant Tests
-        run: npm test
-
-      - name: Syntax & Lint Verification
-        run: npm run lint
+          path: qmoosa-zk-groth16-dashboard
+      - uses: actions/checkout@v4
+        with:
+          repository: elon00/qmoosa-zk-groth16-protocol
+          ref: 9b7f29227196b57f2c3d9f52cb123f72c5fd6afc
+          path: qmoosa-zk-groth16-protocol
+      - uses: actions/checkout@v4
+        with:
+          repository: elon00/qmoosa-zk-groth16-engine
+          ref: 001b1ee757fa19f47eccb7f7e4c573c77cd4c668
+          path: qmoosa-zk-groth16-engine
+      - uses: actions/checkout@v4
+        with:
+          repository: elon00/qmoosa-zk-groth16-sdk
+          ref: b28fffc05dd01902fd1c85d5977b340972813b3d
+          path: qmoosa-zk-groth16-sdk
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build protocol
+        working-directory: qmoosa-zk-groth16-protocol
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Build engine
+        working-directory: qmoosa-zk-groth16-engine
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Build sdk
+        working-directory: qmoosa-zk-groth16-sdk
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Install dashboard and run API acceptance
+        working-directory: qmoosa-zk-groth16-dashboard
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+          npm run lint
+      - name: Install pinned browser test tooling
+        working-directory: qmoosa-zk-groth16-dashboard
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Run actual browser acceptance
+        working-directory: qmoosa-zk-groth16-dashboard
+        run: npm run test:browser
