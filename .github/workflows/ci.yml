@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: elon00/qmoosa-zk-groth16-sdk
-          ref: b28fffc05dd01902fd1c85d5977b340972813b3d
+          ref: a835f02711542805e925fa8d37dd51f28f3c37a0
           path: qmoosa-zk-groth16-sdk
       - uses: actions/setup-node@v4
         with:

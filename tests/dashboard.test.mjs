@@ -19,3 +19,11 @@ test('request size boundary is enforced', async () => { const response = await f
 test('non-JSON and malformed JSON bodies are rejected', async () => { assert.equal((await fetch(base + '/api/verify', { method: 'POST', body: '{}' })).status, 415); assert.equal((await fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status, 400); });
 test('cross-origin requests and unknown asset routes are rejected', async () => { const data = await fixture('normal'); const response = await fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.invalid' }, body: JSON.stringify(data) }); assert.equal(response.status, 403); assert.equal((await fetch(base + '/package.json')).status, 404); assert.equal((await fetch(base + '/api/verify')).status, 405); });
 test('page and script are served with restrictive local asset headers', async () => { const response = await fetch(base); assert.equal(response.status, 200); assert.ok(response.headers.get('content-security-policy').includes("script-src 'self'")); const html = await response.text(); assert.ok(html.includes('id="verification-form"')); assert.equal((await fetch(base + '/app.js')).status, 200); });
+
+test('altered non-affine proof marker is rejected through the real SDK', async () => {
+  const data = await fixture('normal');
+  data.proof.pi_a[2] = '2';
+  const response = await post(data);
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, 'Invalid proof, verification key or public inputs.');
+});

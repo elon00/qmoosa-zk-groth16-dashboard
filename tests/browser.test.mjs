@@ -9,3 +9,18 @@ async function waitState(page, state) { await page.waitForFunction(expected => d
 test('browser verifies normal and zero-input genuine examples', async () => { const page = await browser.newPage(); try { await page.goto(base); for (const name of ['normal', 'zero']) { await page.click('#load-' + name); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('Example loaded')); await page.click('#verify'); await waitState(page, 'valid'); assert.equal(await page.locator('#calldata-panel').getAttribute('hidden'), null); } if (process.env.DASHBOARD_SCREENSHOT) await page.screenshot({ path: process.env.DASHBOARD_SCREENSHOT, fullPage: true }); } finally { await page.close(); } });
 test('browser rejects tampered public input and clears stale success', async () => { const page = await browser.newPage(); try { await page.goto(base); await page.click('#load-normal'); await page.waitForFunction(() => document.querySelector('#status').textContent.includes('Example loaded')); await page.click('#verify'); await waitState(page, 'valid'); await page.fill('#public-inputs', '["7777","1"]'); await waitState(page, 'ready'); assert.equal(await page.locator('#calldata-panel').isHidden(), true); await page.click('#verify'); await waitState(page, 'invalid'); } finally { await page.close(); } });
 test('browser reports malformed JSON as an error', async () => { const page = await browser.newPage(); try { await page.goto(base); await page.fill('#verification-key', '{'); await page.fill('#proof', '{}'); await page.fill('#public-inputs', '[]'); await page.click('#verify'); await waitState(page, 'error'); assert.ok((await page.locator('#status').textContent()).includes('valid JSON')); } finally { await page.close(); } });
+
+test('browser rejects an altered projective proof marker', async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(base);
+    await page.click('#load-normal');
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('Example loaded'));
+    const proof = JSON.parse(await page.locator('#proof').inputValue());
+    proof.pi_a[2] = '2';
+    await page.fill('#proof', JSON.stringify(proof));
+    await page.click('#verify');
+    await waitState(page, 'error');
+    assert.equal(await page.locator('#calldata-panel').isHidden(), true);
+  } finally { await page.close(); }
+});
