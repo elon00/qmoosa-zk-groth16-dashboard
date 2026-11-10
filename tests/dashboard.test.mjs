@@ -1,37 +1,29 @@
-import test from 'node:test';
+import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'node:fs/promises';
+import { createDashboardServer, MAX_BODY_BYTES } from '../server.mjs';
+let server, base;
+before(async () => { server = createDashboardServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); base = 'http://127.0.0.1:' + server.address().port; });
+after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+const fixture = name => fs.readFile(new URL('../public/examples/' + name + '.json', import.meta.url), 'utf8').then(JSON.parse);
+const post = body => fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+for (const name of ['normal', 'zero']) test('genuine ' + name + ' proof verifies through HTTP and SDK', async () => {
+  const response = await post(await fixture(name)); const data = await response.json();
+  assert.equal(response.status, 200); assert.equal(data.valid, true); assert.equal(data.calldata.a.length, 2);
+});
+test('changed public output returns invalid rather than success', async () => { const data = await fixture('normal'); data.publicInputs[0] = (BigInt(data.publicInputs[0]) + 1n).toString(); const response = await post(data); assert.equal(response.status, 200); const result = await response.json(); assert.equal(result.valid, false); assert.equal(result.calldata, undefined); });
+test('blank zero public input is rejected by the real SDK', async () => { const data = await fixture('zero'); data.publicInputs[data.publicInputs.findIndex(x => BigInt(x) === 0n)] = ''; assert.equal((await post(data)).status, 400); });
+test('malformed and foreign proving-system artifacts are rejected', async () => { assert.equal((await post(null)).status, 400); const data = await fixture('normal'); data.proof.protocol = 'plonk'; assert.equal((await post(data)).status, 400); data.proof.protocol = 'groth16'; data.verifyingKey.curve = 'bls12381'; assert.equal((await post(data)).status, 400); });
+test('malformed point yields a bounded client error without stack disclosure', async () => { const data = await fixture('normal'); data.proof.pi_a = ['1', '1', '1']; const response = await post(data); assert.equal(response.status, 400); const error = await response.json(); assert.deepEqual(Object.keys(error), ['error']); assert.ok(!error.error.includes('server.mjs')); });
+test('request size boundary is enforced', async () => { const response = await fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: ' '.repeat(MAX_BODY_BYTES + 1) }); assert.equal(response.status, 413); });
+test('non-JSON and malformed JSON bodies are rejected', async () => { assert.equal((await fetch(base + '/api/verify', { method: 'POST', body: '{}' })).status, 415); assert.equal((await fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' })).status, 400); });
+test('cross-origin requests and unknown asset routes are rejected', async () => { const data = await fixture('normal'); const response = await fetch(base + '/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://untrusted.invalid' }, body: JSON.stringify(data) }); assert.equal(response.status, 403); assert.equal((await fetch(base + '/package.json')).status, 404); assert.equal((await fetch(base + '/api/verify')).status, 405); });
+test('page and script are served with restrictive local asset headers', async () => { const response = await fetch(base); assert.equal(response.status, 200); assert.ok(response.headers.get('content-security-policy').includes("script-src 'self'")); const html = await response.text(); assert.ok(html.includes('id="verification-form"')); assert.equal((await fetch(base + '/app.js')).status, 200); });
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const htmlPath = path.resolve(__dirname, '..', 'public', 'index.html');
-
-test('Dashboard: HTML Static Invariants and Security Guardrails', () => {
-  assert.ok(fs.existsSync(htmlPath), 'index.html must exist');
-  const html = fs.readFileSync(htmlPath, 'utf8');
-
-  // Verify BN254 Curve Equation & Constants
-  assert.ok(html.includes('y^2 = x^3 + 3 (mod q)'), 'Must display BN254 curve equation');
-  assert.ok(html.includes('21888242871839275222246405745257275088696311157297823662689037894645226208583'), 'Must display field modulus q');
-  assert.ok(html.includes('21888242871839275222246405745257275088548364400416034343698204186575808495617'), 'Must display scalar order r');
-
-  // Verify Precompile 0x08
-  assert.ok(html.includes('0x08'), 'Must reference EIP-197 pairing precompile 0x08');
-  assert.ok(html.includes('170,000 gas'), 'Must display 4-pair gas cost');
-
-  // Verify Proof Byte Dimensions
-  assert.ok(html.includes('64 B'), 'G1 point byte size');
-  assert.ok(html.includes('128 B'), 'G2 point byte size');
-  assert.ok(html.includes('256 B'), 'Total proof byte size');
-
-  // Verify Pairing Verification Equation
-  assert.ok(html.includes('e(A, B) = e(alpha_1, beta_2) * e(L, gamma_2) * e(C, delta_2)'), 'Must state pairing equation');
-
-  // Verify Production Certification Lock & Zero Spend Guardrails
-  assert.ok(
-    html.includes('DEPLOYMENT: LOCKED (0/1,000 CERTIFIED)'),
-    'Must display persistent mainnet deployment lock badge'
-  );
-  assert.ok(html.includes('ZERO GAS & ZERO CLOUD SPEND'), 'Must display zero spend invariant');
+test('altered non-affine proof marker is rejected through the real SDK', async () => {
+  const data = await fixture('normal');
+  data.proof.pi_a[2] = '2';
+  const response = await post(data);
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, 'Invalid proof, verification key or public inputs.');
 });
