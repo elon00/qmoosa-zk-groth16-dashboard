@@ -28,7 +28,7 @@ jobs:
           repository: elon00/qmoosa-zk-groth16-sdk
           ref: a835f02711542805e925fa8d37dd51f28f3c37a0
           path: qmoosa-zk-groth16-sdk
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Build protocol
